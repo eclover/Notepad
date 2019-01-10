@@ -1,7 +1,7 @@
 #include "ReplaceDialog.h"
 
 
-ReplaceDialog::ReplaceDialog(QWidget* parent,QPlainTextEdit* pText)
+ReplaceDialog::ReplaceDialog(QWidget* parent,MainEditor* pText)
     :FindDialog(parent,pText)
 {
     initControls();

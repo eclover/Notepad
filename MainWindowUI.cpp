@@ -5,16 +5,17 @@
 #include <QLabel>
 #include "AppConfig.h"
 #include <QPixmap>
+#include <QDebug>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent),
-      m_pFindDlg(new FindDialog(this,&mainEditor)),
-      m_pReplaceDlg(new ReplaceDialog(this,&mainEditor))
+      mainEdit(NULL),
+      m_pFindDlg(new FindDialog(this,mainEdit)),
+      m_pReplaceDlg(new ReplaceDialog(this,mainEdit))
 {
-    this->setWindowTitle("eNotePad - [ New ]");
     this->setAcceptDrops(true);;
     this->setWindowIcon(QIcon(QPixmap(":/images/icon.png")));
-    m_filePath = "";
+
     m_isTextChanged = false;
 }
 
@@ -23,30 +24,19 @@ MainWindow::~MainWindow()
 
 }
 
-void MainWindow::openFile(QString path)
-{
-    preEditorChange();
-    if(!m_isTextChanged)
-    {
-       openFileToEditor(path);
-
-    }
-
-}
-
 bool MainWindow::construct()
 {
     bool ret = true;
     AppConfig config;
+    ret = ret && initTabWidget();
     ret = ret && initMenuBar();
     ret = ret && initToolBar();
     ret = ret && initStatusBar();
-    ret = ret && initMainEdit();
 
     if(config.isValid())
     {
         QFont font = config.editorFont();
-        mainEditor.setFont(font);
+        mainEdit->setFont(font);
 
         bool isToolBarVisible = config.isToolBarVisible();
         QToolBar* tb = toolBar();
@@ -66,11 +56,11 @@ bool MainWindow::construct()
         bool isAutoWrap = config.isAutoWrap();
         if(isAutoWrap)
         {
-            mainEditor.setLineWrapMode(QPlainTextEdit::WidgetWidth);
+            mainEdit->setLineWrapMode(MainEditor::WidgetWidth);
         }
         else
         {
-            mainEditor.setLineWrapMode(QPlainTextEdit::NoWrap);
+            mainEdit->setLineWrapMode(MainEditor::NoWrap);
         }
 
         findMenuBarAction("AutoWrap")->setChecked(isToolBarVisible);
@@ -134,22 +124,22 @@ bool MainWindow::initStatusBar()
     return ret;
 }
 
-bool MainWindow::initMainEdit()
+
+
+bool MainWindow::initTabWidget()
 {
     bool ret = true;
-    mainEditor.setParent(this);
-    mainEditor.setAcceptDrops(false);
-    connect(&mainEditor,&QPlainTextEdit::textChanged,this,&MainWindow::onTextChanged);
-    connect(&mainEditor,&QPlainTextEdit::copyAvailable,this,&MainWindow::onCopyAvailable);
-    connect(&mainEditor,&QPlainTextEdit::undoAvailable,this,&MainWindow::onUndoAvailable);
-    connect(&mainEditor,&QPlainTextEdit::redoAvailable,this,&MainWindow::onRedoAvailable);
-    connect(&mainEditor,&QPlainTextEdit::cursorPositionChanged,this,&MainWindow::onCursorPositionChanged);
-    setCentralWidget(&mainEditor);
+    m_tabWidget.setParent(this);
+    m_tabWidget.setTabShape(QTabWidget::Triangular);
+    m_tabWidget.setTabsClosable(true);
 
-    QPalette p = mainEditor.palette();
-    p.setColor(QPalette::Inactive,QPalette::Highlight,p.color(QPalette::Active,QPalette::Highlight));
-    p.setColor(QPalette::Inactive,QPalette::HighlightedText,p.color(QPalette::Active,QPalette::HighlightedText));
-    mainEditor.setPalette(p);
+    if(m_tabWidget.count() < 1)
+    {
+        onFileNew();
+    }
+    connect(&m_tabWidget,&QTabWidget::currentChanged,this,&MainWindow::onCurrentTabChanged);
+    connect(&m_tabWidget,&QTabWidget::tabCloseRequested,this,&MainWindow::onTabCloseRequested);
+    setCentralWidget(&m_tabWidget);
     return ret;
 }
 
@@ -165,7 +155,7 @@ bool MainWindow::initFileMenu(QMenuBar* mb)
         ret = ret && makeAction(action,tr("New(&N)"),Qt::CTRL+Qt::Key_N);
         if(ret)
         {
-            connect(action,&QAction::triggered,this,&MainWindow::onNewFile);
+            connect(action,&QAction::triggered,this,&MainWindow::onFileNew);
             menu->addAction(action);
         }
 
@@ -194,6 +184,7 @@ bool MainWindow::initFileMenu(QMenuBar* mb)
         ret = ret && makeAction(action,tr("Save All"),0);
         if(ret)
         {
+            connect(action,&QAction::triggered,this,&MainWindow::onFileSaveAll);
             menu->addAction(action);
         }
 
@@ -202,12 +193,14 @@ bool MainWindow::initFileMenu(QMenuBar* mb)
         ret = ret && makeAction(action,tr("Close"),Qt::CTRL+Qt::Key_W);
         if(ret)
         {
+            connect(action,&QAction::triggered,this,&MainWindow::onFileClose);
             menu->addAction(action);
         }
 
         ret = ret && makeAction(action,tr("Close All(&L)"),Qt::CTRL+Qt::SHIFT+Qt::Key_W);
         if(ret)
         {
+            connect(action,&QAction::triggered,this,&MainWindow::onFileCloseAll);
             menu->addAction(action);
         }
 
@@ -217,12 +210,6 @@ bool MainWindow::initFileMenu(QMenuBar* mb)
         if(ret)
         {
             connect(action,&QAction::triggered,this,&MainWindow::onFilePrint);
-            menu->addAction(action);
-        }
-
-        ret = ret && makeAction(action,tr("立即打印"),0);
-        if(ret)
-        {
             menu->addAction(action);
         }
 
@@ -258,7 +245,7 @@ bool MainWindow::initEditMenu(QMenuBar *mb)
         ret = ret && makeAction(action,tr("Undo(&U)"),Qt::CTRL+Qt::Key_Z);
         if(ret)
         {
-            connect(action,&QAction::triggered,&mainEditor,&QPlainTextEdit::undo);
+            connect(action,&QAction::triggered,this,&MainWindow::onUndo);
             action->setEnabled(false);
             menu->addAction(action);
         }
@@ -266,7 +253,7 @@ bool MainWindow::initEditMenu(QMenuBar *mb)
         ret = ret && makeAction(action,tr("Redo(&R)"),Qt::CTRL+Qt::Key_Y);
         if(ret)
         {
-            connect(action,&QAction::triggered,&mainEditor,&QPlainTextEdit::redo);
+            connect(action,&QAction::triggered,this,&MainWindow::onRedo);
             action->setEnabled(false);
             menu->addAction(action);
         }
@@ -276,7 +263,7 @@ bool MainWindow::initEditMenu(QMenuBar *mb)
         ret = ret && makeAction(action,tr("Cut(&R)"),Qt::CTRL+Qt::Key_X);
         if(ret)
         {
-            connect(action,&QAction::triggered,&mainEditor,&QPlainTextEdit::cut);
+            connect(action,&QAction::triggered,this,&MainWindow::onCut);
             action->setEnabled(false);
             menu->addAction(action);
         }
@@ -284,7 +271,7 @@ bool MainWindow::initEditMenu(QMenuBar *mb)
         ret = ret && makeAction(action,tr("Copy(&C)"),Qt::CTRL+Qt::Key_C);
         if(ret)
         {
-            connect(action,&QAction::triggered,&mainEditor,&QPlainTextEdit::copy);
+            connect(action,&QAction::triggered,this,&MainWindow::onCopy);
             action->setEnabled(false);
             menu->addAction(action);
         }
@@ -292,7 +279,7 @@ bool MainWindow::initEditMenu(QMenuBar *mb)
         ret = ret && makeAction(action,tr("Paste(&P)"),Qt::CTRL+Qt::Key_V);
         if(ret)
         {
-            connect(action,&QAction::triggered,&mainEditor,&QPlainTextEdit::paste);
+            connect(action,&QAction::triggered,this,&MainWindow::onPaste);
             menu->addAction(action);
         }
 
@@ -306,6 +293,7 @@ bool MainWindow::initEditMenu(QMenuBar *mb)
         ret = ret && makeAction(action,tr("Select All(&L)"),Qt::CTRL+Qt::Key_A);
         if(ret)
         {
+            connect(action,&QAction::triggered,this,&MainWindow::onSelectAll);
             menu->addAction(action);
         }
         menu->addSeparator();
@@ -488,7 +476,7 @@ bool MainWindow::initToolItem(QToolBar* tb)
     if(ret)
     {
 
-        connect(action,&QAction::triggered,this,&MainWindow::onNewFile);
+        connect(action,&QAction::triggered,this,&MainWindow::onFileNew);
         tb->addAction(action);
     }
 
@@ -526,7 +514,7 @@ bool MainWindow::initToolItem(QToolBar* tb)
     ret = ret && makeAction(action,tr("Undo"),":/images/undo.png");
     if(ret)
     {
-        connect(action,&QAction::triggered,&mainEditor,&QPlainTextEdit::undo);
+        connect(action,&QAction::triggered,this,&MainWindow::onUndo);
         action->setEnabled(false);
         tb->addAction(action);
     }
@@ -534,7 +522,7 @@ bool MainWindow::initToolItem(QToolBar* tb)
     ret = ret && makeAction(action,tr("Redo"),":/images/redo.png");
     if(ret)
     {
-        connect(action,&QAction::triggered,&mainEditor,&QPlainTextEdit::redo);
+        connect(action,&QAction::triggered,this,&MainWindow::onRedo);
         action->setEnabled(false);
         tb->addAction(action);
     }
@@ -544,7 +532,7 @@ bool MainWindow::initToolItem(QToolBar* tb)
     ret = ret && makeAction(action,tr("Cut"),":/images/cut.png");
     if(ret)
     {
-        connect(action,&QAction::triggered,&mainEditor,&QPlainTextEdit::cut);
+        connect(action,&QAction::triggered,this,&MainWindow::onCut);
         action->setEnabled(false);
         tb->addAction(action);
     }
@@ -552,7 +540,7 @@ bool MainWindow::initToolItem(QToolBar* tb)
     ret = ret && makeAction(action,tr("Copy"),":/images/copy.png");
     if(ret)
     {
-        connect(action,&QAction::triggered,&mainEditor,&QPlainTextEdit::copy);
+        connect(action,&QAction::triggered,this,&MainWindow::onCopy);
         action->setEnabled(false);
         tb->addAction(action);
     }
@@ -560,7 +548,7 @@ bool MainWindow::initToolItem(QToolBar* tb)
     ret = ret && makeAction(action,tr("Paste"),":/images/paste.png");
     if(ret)
     {
-        connect(action,&QAction::triggered,&mainEditor,&QPlainTextEdit::paste);
+        connect(action,&QAction::triggered,this,&MainWindow::onPaste);
         tb->addAction(action);
     }
 
@@ -652,6 +640,35 @@ bool MainWindow::initStatusItem(QStatusBar *sb)
         sb->addPermanentWidget(new QLabel());
         sb->addPermanentWidget(&statusLbl);
         sb->addPermanentWidget(author);
+    }
+    return ret;
+}
+
+void MainWindow::addNewTab(MainEditor* edit,QString title)
+{
+
+    updateMainEditor(edit);
+    m_tabWidget.addTab(mainEdit,title);
+    m_tabWidget.setCurrentIndex(m_tabWidget.count()-1);
+
+}
+
+bool MainWindow::createEdit(MainEditor*& edit)
+{
+    bool ret = true;
+    edit = new MainEditor(this);
+    if(edit != NULL)
+    {
+        edit->setAcceptDrops(false);
+        connect(edit,&MainEditor::textChanged,this,&MainWindow::onTextChanged);
+        connect(edit,&MainEditor::copyAvailable,this,&MainWindow::onCopyAvailable);
+        connect(edit,&MainEditor::undoAvailable,this,&MainWindow::onUndoAvailable);
+        connect(edit,&MainEditor::redoAvailable,this,&MainWindow::onRedoAvailable);
+        connect(edit,&MainEditor::cursorPositionChanged,this,&MainWindow::onCursorPositionChanged);
+    }
+    else
+    {
+        ret = false;
     }
     return ret;
 }

@@ -19,6 +19,7 @@
 #include <QInputDialog>
 #include <QTextStream>
 #include <QTextCodec>
+#include "Pub.h"
 
 QString MainWindow::showFileDialog(QFileDialog::AcceptMode mode,QString title)
 {
@@ -62,94 +63,81 @@ QString MainWindow::showFileDialog(QFileDialog::AcceptMode mode,QString title)
     return ret;
 }
 
-void MainWindow::showErrorMessage(QString message)
-{
-    QMessageBox msg(this);
-    msg.setWindowTitle("Error");
-    msg.setText(message);
-    msg.setIcon(QMessageBox::Critical);
-    msg.setStandardButtons(QMessageBox::Ok);
-    msg.exec();
-}
 
-int MainWindow::showQueryMessage(QString message)
-{
-    int ret = -1;
-    QMessageBox msg(this);
-    msg.setWindowTitle("Query");
-    msg.setIcon(QMessageBox::Question);
-    msg.setText(message);
-    msg.setStandardButtons(QMessageBox::Save | QMessageBox::No | QMessageBox::Cancel );
 
-    ret = msg.exec();
-    return ret;
-}
-
-void MainWindow::preEditorChange()
+bool MainWindow::preEditorChange(MainEditor* edit,QString tabTitle)
 {
-    if(m_isTextChanged)
+    bool ret = true;
+    if(edit->isTextChanged())
     {
-        int ret = showQueryMessage(tr("Do you want to save the changes to the file?"));
-
-        switch(ret)
+        int r = -1;
+        if(edit->filePath() == "")
         {
-        case QMessageBox::Save:
-            saveCurrentFile(m_filePath);
-            break;
-        case QMessageBox::No:
-            m_isTextChanged = false;
-            break;
-        case QMessageBox::Cancel:
-            break;
-        }
-    }
-}
-
-void MainWindow::openFileToEditor(QString path)
-{
-    QFile file(path);
-    if(file.open(QIODevice::ReadOnly | QIODevice::Text))
-    {
-        QTextCodec* codec = QTextCodec::codecForName("GBK");
-        mainEditor.setPlainText(codec->toUnicode(file.readAll()));
-        file.close();
-        m_isTextChanged = false;
-        m_filePath = path;
-        this->setWindowTitle("NotePad - ["+path+"]");
-
-    }
-    else
-    {
-        this->showErrorMessage(tr("Open file failed!\n\n")+"\""+path+"\"");
-    }
-}
-
-QString MainWindow::saveCurrentFile(QString path)
-{
-    QString ret = path;
-    if(path == "")
-    {
-        path = showFileDialog(QFileDialog::AcceptSave,tr("Save"));
-    }
-    if(path != "")
-    {
-        QFile file(path);
-
-        if(file.open(QIODevice::WriteOnly | QIODevice::Text))
-        {
-            QTextStream out(&file);
-            out<<mainEditor.toPlainText();
-
-            m_isTextChanged = false;
-            file.close();
-            this->setWindowTitle("NotePad - ["+path+"]");
+            r = showQueryMessage(tr("Do you want to save the changes to the file \"%1\"?").arg(tabTitle));
         }
         else
         {
-            this->showErrorMessage(tr("Save File Error\n\n")+"\""+path+"\"");
-            ret = "";
+            r = showQueryMessage(tr("Do you want to save the changes to the file \"%1\"?").arg(edit->filePath()));
         }
 
+        switch(r)
+        {
+        case QMessageBox::Save:
+            saveCurrentFile(edit);
+            break;
+        case QMessageBox::No:
+          //  edit->setTextChanged(false);
+            break;
+        case QMessageBox::Cancel:
+            ret = false;
+            break;
+        }
+    }
+    return ret;
+}
+
+
+
+void MainWindow::openFileToTabWidget(QString path)
+{
+    MainEditor* edit = NULL;
+    if(createEdit(edit))
+    {
+        edit->openFile(path);
+        QFileInfo fi(path);
+        addNewTab(edit,fi.fileName());
+        edit->setTitle("[" + path +"] - eNotePad");
+        this->setWindowTitle(edit->title());
+    }
+    else
+    {
+         showErrorMessage(tr("Open file failed!\n\n")+"\""+path+"\"");
+    }
+}
+
+bool MainWindow::saveCurrentFile(MainEditor* edit)
+{
+    bool ret = true;
+
+    QString path = edit->filePath();
+    if(path == "")
+    {
+        path = showFileDialog(QFileDialog::AcceptSave,tr("Save"));
+
+    }
+    if(path != "")
+    {
+        if(edit->saveFile(path))
+        {
+            this->setWindowTitle(edit->title());
+            QFileInfo fi(path);
+            m_tabWidget.setTabText(m_tabWidget.currentIndex(),fi.fileName());
+        }
+        else
+        {
+            ret = false;
+            showErrorMessage(tr("Save File Error\n\n")+"\""+ret+"\"");
+        }
     }
     return ret;
 }
@@ -158,25 +146,25 @@ QString MainWindow::saveCurrentFile(QString path)
 
 void MainWindow::onFileOpen()
 {
-    preEditorChange();
-    if(!m_isTextChanged)
+    //preEditorChange();
+
+    QString path = showFileDialog(QFileDialog::AcceptOpen,tr("Open"));
+    if(path != "")
     {
-        QString path = showFileDialog(QFileDialog::AcceptOpen,tr("Open"));
-        if(path != "")
+        if(mainEdit->toPlainText() == "" && !mainEdit->isTextChanged() )
         {
-           openFileToEditor(path);
+            onTabCloseRequested(m_tabWidget.currentIndex());
         }
+        openFileToTabWidget(path);
+        onCursorPositionChanged();
     }
+
 
 }
 
 void MainWindow::onFileSave()
 {
-    if(m_filePath == "")
-    {
-        m_filePath = saveCurrentFile(m_filePath);
-    }
-
+    saveCurrentFile(mainEdit);
 
 }
 
@@ -186,41 +174,80 @@ void MainWindow::onFileSaveAs()
 
     if(path != "")
     {
-
-        m_filePath = saveCurrentFile(path);
+        mainEdit->setFilePath(path);
+        saveCurrentFile(mainEdit);
     }
 
 }
 
-void MainWindow::onNewFile()
+void MainWindow::onFileSaveAll()
 {
-    preEditorChange();
+    for(int i=0;i < m_tabWidget.count();i++)
+    {
+        MainEditor* edit = dynamic_cast<MainEditor*>(m_tabWidget.widget(i));
+        if(edit != NULL)
+        {
+            preEditorChange(edit,m_tabWidget.tabText(i));
+        }
+    }
+}
+
+void MainWindow::onFileNew()
+{
+/*    preEditorChange();
 
     if(!m_isTextChanged)
     {
-        mainEditor.clear();
+        mainEdit->clear();
         this->setWindowTitle("NotePad - [ New ]");
         m_filePath = "";
         m_isTextChanged = false;
+    }*/
+    MainEditor* edit = NULL;
+    if(createEdit(edit))
+    {
+
+        addNewTab(edit,"New");
+        onCursorPositionChanged();
+        this->setWindowTitle(edit->title());
     }
 }
 
 void MainWindow::onTextChanged()
 {
-    if(!m_isTextChanged)
+    this->setWindowTitle(mainEdit->title());
+ /*   if(!mainEdit->isTextChanged())
     {
-        this->setWindowTitle("*" + this->windowTitle());
+        mainEdit->setTitle("*" + mainEdit->title());
+        this->setWindowTitle(mainEdit->title());
     }
-    m_isTextChanged = true;
+    mainEdit->setTextChanged(true);*/
 }
 
 void MainWindow::closeEvent(QCloseEvent* e)
 {
-    preEditorChange();
-    if(!m_isTextChanged)
+//    preEditorChange();
+ /*   if(!m_isTextChanged)
     {
-        bool autoWrap = (mainEditor.lineWrapMode()==QPlainTextEdit::WidgetWidth);
-        AppConfig config(this->size(),this->pos(),mainEditor.font(),toolBar()->isVisible(),statusBar()->isVisible(),autoWrap);
+        bool autoWrap = (mainEdit->lineWrapMode()==MainEditor::WidgetWidth);
+        AppConfig config(this->size(),this->pos(),mainEdit->font(),toolBar()->isVisible(),statusBar()->isVisible(),autoWrap);
+        config.write();
+        QMainWindow::closeEvent(e);
+    }
+    else
+    {
+        e->ignore();
+    }*/
+
+    for(int i=m_tabWidget.count()-1;i>=0;i--)
+    {
+        closeTab(i);
+    }
+
+    if(m_tabWidget.count() == 0)
+    {
+        bool autoWrap = (mainEdit->lineWrapMode()==MainEditor::WidgetWidth);
+        AppConfig config(this->size(),this->pos(),mainEdit->font(),toolBar()->isVisible(),statusBar()->isVisible(),autoWrap);
         config.write();
         QMainWindow::closeEvent(e);
     }
@@ -229,6 +256,7 @@ void MainWindow::closeEvent(QCloseEvent* e)
         e->ignore();
     }
 }
+
 
 void MainWindow::dragEnterEvent(QDragEnterEvent *e)
 {
@@ -248,18 +276,20 @@ void MainWindow::dropEvent(QDropEvent *e)
     {
         QList<QUrl> urls = e->mimeData()->urls();
 
-        QString path = urls.at(0).toLocalFile();
-        QFileInfo fi(path);
-        if(fi.isFile())
+        for(int i=0;i<urls.length();i++)
         {
-            preEditorChange();
-            if(!m_isTextChanged)
+            QString path = urls.at(i).toLocalFile();
+            QFileInfo fi(path);
+            if(fi.isFile())
             {
-                openFileToEditor(path);
+                //preEditorChange();
+                if(!m_isTextChanged)
+                {
+                    openFileToTabWidget(path);
+                }
+
             }
-
         }
-
     }
     else
     {
@@ -327,6 +357,13 @@ QToolBar *MainWindow::toolBar()
     return ret;
 }
 
+void MainWindow::updateMainEditor(MainEditor *edit)
+{
+    mainEdit = edit;
+    m_pFindDlg->setPlainTextEdit(edit);
+    m_pReplaceDlg->setPlainTextEdit(edit);
+}
+
 
 void MainWindow::onCopyAvailable(bool available)
 {
@@ -356,7 +393,7 @@ void MainWindow::onFilePrint()
     if(dlg.exec() == QDialog::Accepted)
     {
         QPrinter* p = dlg.printer();
-        mainEditor.document()->print(p);
+        mainEdit->document()->print(p);
     }
 
 
@@ -364,8 +401,8 @@ void MainWindow::onFilePrint()
 
 void MainWindow::onCursorPositionChanged()
 {
-    int pos = mainEditor.textCursor().position();
-    QString text = mainEditor.toPlainText();
+    int pos = mainEdit->textCursor().position();
+    QString text = mainEdit->toPlainText();
     int ln = 0 ,col=0;
     int flag = -1;
     for(int i=0;i<pos;i++)
@@ -388,17 +425,19 @@ void MainWindow::onEditDelete()
     QKeyEvent keyPress(QEvent::KeyPress,Qt::Key_Delete,Qt::NoModifier);
     QKeyEvent keyRelease(QEvent::KeyRelease,Qt::Key_Delete,Qt::NoModifier);
 
-    QApplication::sendEvent(&mainEditor,&keyPress);
-    QApplication::sendEvent(&mainEditor,&keyRelease);
+    QApplication::sendEvent(mainEdit,&keyPress);
+    QApplication::sendEvent(mainEdit,&keyRelease);
 }
 
 void MainWindow::onSearchFind()
 {
+    m_pFindDlg->setPlainTextEdit(mainEdit);
     m_pFindDlg->show();
 }
 
 void MainWindow::onSearchReplace()
 {
+    m_pReplaceDlg->setPlainTextEdit(mainEdit);
     m_pReplaceDlg->show();
 }
 
@@ -440,15 +479,15 @@ void MainWindow::onHelpAbout()
 
 void MainWindow::onFormatAutoWrap()
 {
-    if(mainEditor.lineWrapMode() == QPlainTextEdit::WidgetWidth)
+    if(mainEdit->lineWrapMode() == MainEditor::WidgetWidth)
     {
-        mainEditor.setLineWrapMode(QPlainTextEdit::NoWrap);
+        mainEdit->setLineWrapMode(MainEditor::NoWrap);
         findToolBarAction("AutoWrap")->setChecked(false);
         findMenuBarAction("AutoWrap")->setChecked(false);
     }
     else
     {
-        mainEditor.setLineWrapMode(QPlainTextEdit::WidgetWidth);
+        mainEdit->setLineWrapMode(MainEditor::WidgetWidth);
         findToolBarAction("AutoWrap")->setChecked(true);
         findMenuBarAction("AutoWrap")->setChecked(true);
 
@@ -458,18 +497,18 @@ void MainWindow::onFormatAutoWrap()
 void MainWindow::onFormatFont()
 {
     bool ok;
-    QFont font = QFontDialog::getFont(&ok,mainEditor.font(),this,tr("Font"));
-    mainEditor.setFont(font);
+    QFont font = QFontDialog::getFont(&ok,mainEdit->font(),this,tr("Font"));
+    mainEdit->setFont(font);
 }
 
 void MainWindow::onSearchGoto()
 {
     bool ok = false;
-    int line = QInputDialog::getInt(this,tr("Goto"),tr("Goto:"),1,1,mainEditor.document()->lineCount(),1,&ok,Qt::WindowCloseButtonHint | Qt::Drawer);
+    int line = QInputDialog::getInt(this,tr("Goto"),tr("Goto:"),1,1,mainEdit->document()->lineCount(),1,&ok,Qt::WindowCloseButtonHint | Qt::Drawer);
     if(ok)
     {
-        QString text = mainEditor.toPlainText();
-        QTextCursor c = mainEditor.textCursor();
+        QString text = mainEdit->toPlainText();
+        QTextCursor c = mainEdit->textCursor();
         int pos = 0;
         int next = -1;
         for(int i=0;i<line;i++)
@@ -478,17 +517,113 @@ void MainWindow::onSearchGoto()
             next = text.indexOf('\n',pos);
         }
         c.setPosition(pos);
-        mainEditor.setTextCursor(c);
+        mainEdit->setTextCursor(c);
     }
 }
 
 void MainWindow::onEditSetReadOnly()
 {
-    bool readOnly = mainEditor.isReadOnly();
+    bool readOnly = mainEdit->isReadOnly();
 
-    mainEditor.setReadOnly(!readOnly);
+    mainEdit->setReadOnly(!readOnly);
     findMenuBarAction("Set ReadOnly")->setChecked(!readOnly);
 }
+
+
+void MainWindow::closeTab(int index)
+{
+    MainEditor* edit = dynamic_cast<MainEditor*>(m_tabWidget.widget(index));
+    if(index > -1)
+    {
+        if(preEditorChange(edit,m_tabWidget.tabText(index)))
+        {
+            m_tabWidget.removeTab(index);
+            if(m_tabWidget.count() > 0)
+            {
+                edit = dynamic_cast<MainEditor*>(m_tabWidget.currentWidget());
+
+                onCursorPositionChanged();
+                this->setWindowTitle(edit->title());
+            }
+        }
+    }
+}
+
+void MainWindow::onTabCloseRequested(int index)
+{
+    closeTab(index);
+    if(m_tabWidget.count() == 0)
+    {
+        onFileNew();
+    }
+
+}
+
+void MainWindow::onCurrentTabChanged(int index)
+{
+    if(index > -1)
+    {
+        MainEditor* edit = dynamic_cast<MainEditor*>(m_tabWidget.widget(index));
+        if(edit != NULL)
+        {
+            updateMainEditor(edit);
+            QTextDocument* doc = edit->document();
+            bool redoAvailable = doc->isRedoAvailable();
+            bool undoAvailable = doc->isUndoAvailable();
+            onRedoAvailable(redoAvailable);
+            onUndoAvailable(undoAvailable);
+        }
+        this->setWindowTitle(mainEdit->title());
+        onCursorPositionChanged();
+
+
+
+    }
+}
+
+void MainWindow::onCopy()
+{
+    mainEdit->copy();
+}
+
+void MainWindow::onCut()
+{
+    mainEdit->cut();
+}
+
+
+void MainWindow::onPaste()
+{
+    mainEdit->paste();
+}
+
+void MainWindow::onSelectAll()
+{
+    mainEdit->selectAll();
+}
+
+void MainWindow::onFileCloseAll()
+{
+    QCloseEvent e;
+    QApplication::sendEvent(this,&e);
+}
+
+void MainWindow::onFileClose()
+{
+    int index = m_tabWidget.currentIndex();
+    closeTab(index);
+}
+
+void MainWindow::onUndo()
+{
+    mainEdit->undo();
+}
+
+void MainWindow::onRedo()
+{
+    mainEdit->redo();
+}
+
 
 void MainWindow::onFileExit()
 {

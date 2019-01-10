@@ -3,7 +3,7 @@
 #include <QMessageBox>
 #include <QDebug>
 
-FindDialog::FindDialog(QWidget *parent,QPlainTextEdit *pText )
+FindDialog::FindDialog(QWidget *parent,MainEditor *pText )
     :QDialog(parent,Qt::WindowCloseButtonHint | Qt::Drawer)
 {
     initControls();
@@ -11,12 +11,12 @@ FindDialog::FindDialog(QWidget *parent,QPlainTextEdit *pText )
     setPlainTextEdit(pText);
 }
 
-void FindDialog::setPlainTextEdit(QPlainTextEdit* pText)
+void FindDialog::setPlainTextEdit(MainEditor* pText)
 {
     m_pText = pText;
 }
 
-QPlainTextEdit *FindDialog::getPlainTextEdit()
+MainEditor *FindDialog::getPlainTextEdit()
 {
     return m_pText;
 }
@@ -31,7 +31,15 @@ void FindDialog::onFindClicked()
         QTextCursor c = m_pText->textCursor() ;
         if(m_backwardBtn.isChecked())
         {
-            index = text.indexOf(findText,c.position(),m_matchChkBx.isChecked()?Qt::CaseSensitive:Qt::CaseInsensitive);
+            if(c.hasSelection())
+            {
+                index = text.indexOf(findText,c.selectionEnd(),m_matchChkBx.isChecked()?Qt::CaseSensitive:Qt::CaseInsensitive);
+            }
+            else
+            {
+                index = text.indexOf(findText,c.position(),m_matchChkBx.isChecked()?Qt::CaseSensitive:Qt::CaseInsensitive);
+
+            }
             if(index >= 0)
             {
                 c.setPosition(index);
@@ -42,9 +50,16 @@ void FindDialog::onFindClicked()
 
         if(m_forwardBtn.isChecked())
         {
-            index = text.lastIndexOf(findText,c.position()-text.length()-1,m_matchChkBx.isChecked()?Qt::CaseSensitive:Qt::CaseInsensitive);
+            if(c.hasSelection())
+            {
+                index = text.lastIndexOf(findText,c.selectionStart()-text.length()-1,m_matchChkBx.isChecked()?Qt::CaseSensitive:Qt::CaseInsensitive);
+            }
+            else
+            {
+                index = text.lastIndexOf(findText,c.position()-text.length()-1,m_matchChkBx.isChecked()?Qt::CaseSensitive:Qt::CaseInsensitive);
 
-            if(index >= 0)
+            }
+           if(index >= 0)
             {
                 c.setPosition(index+findText.length());
                 c.setPosition(index,QTextCursor::KeepAnchor);

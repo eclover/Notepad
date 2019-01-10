@@ -3,6 +3,7 @@
 
 #include <QMainWindow>
 #include <QMenuBar>
+#include <QSharedPointer>
 #include <QAction>
 #include <QToolBar>
 #include <QStatusBar>
@@ -10,9 +11,11 @@
 #include <QPlainTextEdit>
 #include <QFileDialog>
 #include "FindDialog.h"
-#include <QSharedPointer>
+#include "MainEditor.h"
 #include <QPalette>
 #include "ReplaceDialog.h"
+#include <QTabWidget>
+
 
 class MainWindow : public QMainWindow
 {
@@ -23,7 +26,7 @@ private:
     bool initMenuBar();
     bool initToolBar();
     bool initStatusBar();
-    bool initMainEdit();
+    bool initTabWidget();
 
     bool initFileMenu(QMenuBar* mb);
     bool initEditMenu(QMenuBar* mb);
@@ -35,29 +38,31 @@ private:
     bool initToolItem(QToolBar* tb);
     bool initStatusItem(QStatusBar* sb);
 
+
+    void addNewTab(MainEditor* edit,QString title);
+    bool createEdit(MainEditor*& edit);
     bool makeAction(QAction*& action,QString title,int st);
     bool makeAction(QAction*& action,QString tip,QString icon);
 
     QString showFileDialog(QFileDialog::AcceptMode mode,QString title);
-    void showErrorMessage(QString message);
-    int showQueryMessage(QString message);
 
-    void preEditorChange();
-    void openFileToEditor(QString path);
-    QString saveCurrentFile(QString path);
+    bool preEditorChange(MainEditor* edit,QString tabTitle);
+    bool saveCurrentFile(MainEditor* edit);
     void closeEvent(QCloseEvent* e);
+    void closeTab(int index);
     void dragEnterEvent(QDragEnterEvent* e);
     void dropEvent(QDropEvent* e);
     QAction* findMenuBarAction(QString text);
     QAction* findToolBarAction(QString text);
-
     QToolBar* toolBar();
+    void updateMainEditor(MainEditor* edit);
 
-    QPlainTextEdit mainEditor;
+  //  QPlainTextEdit mainEditor;
+    MainEditor* mainEdit;
+    QTabWidget m_tabWidget;
     QLabel statusLbl;
 
     bool m_isTextChanged;
-    QString m_filePath;
     QSharedPointer<FindDialog> m_pFindDlg;
     QSharedPointer<ReplaceDialog> m_pReplaceDlg;
 
@@ -65,8 +70,11 @@ private slots:
     void onFileOpen();
     void onFileSave();
     void onFileSaveAs();
+    void onFileSaveAll();
     void onFileExit();
-    void onNewFile();
+    void onFileNew();
+    void onFileCloseAll();
+    void onFileClose();
     void onTextChanged();
     void onCopyAvailable(bool available);
     void onRedoAvailable(bool available);
@@ -83,11 +91,21 @@ private slots:
     void onFormatFont();
     void onSearchGoto();
     void onEditSetReadOnly();
+    void onTabCloseRequested(int index);
+    void onCurrentTabChanged(int index);
+
+    void onCopy();
+    void onCut();
+    void onUndo();
+    void onRedo();
+    void onPaste();
+    void onSelectAll();
+
 
 public:
     MainWindow(QWidget *parent = 0);
     ~MainWindow();
-    void openFile(QString path);
+    void openFileToTabWidget(QString path);
 
     static MainWindow* NewInstance();
 };

@@ -14,7 +14,7 @@ int main(int argc, char *argv[])
             QFileInfo fi(argv[1]);
             if(fi.isFile())
             {
-                w->openFile(fi.absoluteFilePath());
+                w->openFileToTabWidget(fi.absoluteFilePath());
             }
         }
         w->show();

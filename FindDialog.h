@@ -10,16 +10,17 @@
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QGridLayout>
-#include <QPlainTextEdit>
+#include "MainEditor.h"
 #include <QPointer>
 
 class FindDialog : public QDialog
 {
     Q_OBJECT
 public:
-    explicit FindDialog(QWidget *parent = 0,QPlainTextEdit *pText = 0);
+    explicit FindDialog(QWidget *parent = 0,MainEditor *pText = 0);
 
-    QPlainTextEdit* getPlainTextEdit();
+    MainEditor* getPlainTextEdit();
+    void setPlainTextEdit(MainEditor* pText);
 
 protected slots:
     void onFindClicked();
@@ -36,12 +37,11 @@ protected:
 
     QGridLayout m_layout;
     QHBoxLayout m_hbLayout;
-    QPointer<QPlainTextEdit> m_pText;
+    QPointer<MainEditor> m_pText;
 
     void initControls();
     void connectSlots();
     bool event(QEvent *event);
-    void setPlainTextEdit(QPlainTextEdit* pText);
 };
 
 #endif // FINDDIALOG_H
